@@ -1,16 +1,19 @@
 <!DOCTYPE html>
 <html lang="tr">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Liste Oluştur</title>
+    <title>Anonim Liste Oluştur</title>
     <link rel="stylesheet" href="styles.css">
-    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+    <script src="https://cdn.rawgit.com/davidshimjs/qrcodejs/gh-pages/qrcode.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
+        #qrcode {
+            margin-top: 20px;
+            text-align: center;
+        }
         #loadingSpinner {
             display: none;
             position: fixed;
@@ -27,12 +30,8 @@
             color: red;
             margin-top: 5px;
         }
-        .isim{
-            margin-top: 100px;
-        }
     </style>
 </head>
-
 <body>
     <div id="loadingSpinner">
         <i class="fas fa-spinner fa-spin"></i> İşlem yapılıyor...
@@ -40,12 +39,20 @@
 
     <div class="container">
         <header>
-            <h1><i class="fas fa-clipboard-list"></i> Liste</h1>
-            <p>Öğelerinizi ekleyin ve paylaşın</p>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h1><i class="fas fa-clipboard-list"></i> Liste Oluştur</h1>
+                    <p>Öğelerinizi ekleyin ve paylaşın</p>
+                </div>
+                <div>
+                    <a href="login.html" class="button secondary">Giriş Yap</a>
+                    <a href="register.html" class="button primary">Kayıt Ol</a>
+                </div>
+            </div>
         </header>
 
         <div class="list-title-input">
-            <input type="text" id="listTitle" placeholder="Liste Başlığı (Örn: Alışveriş Listesi)">
+            <input type="text" id="listTitle" placeholder="Liste Başlığı (isteğe bağlı)">
         </div>
 
         <div class="list-container">
@@ -53,35 +60,29 @@
                 <input type="text" id="itemName" placeholder="Öğe adı">
                 <input type="text" id="itemAmount" placeholder="Miktar">
                 <input type="file" id="itemImage" accept="image/*">
-                <button onclick="addItem()"><i class="fas fa-plus"></i> Ekle</button>
                 <div id="imageError" class="error-message"></div>
+                <button onclick="addItem()"><i class="fas fa-plus"></i> Ekle</button>
             </div>
-
+            <div class="list-header">
+                <div class="header-name">Öğe</div>
+                <div class="header-amount">Miktar</div>
+            </div>
             <div class="list-items" id="itemsList">
-                <!-- Öğeler burada render edilecek -->
+                <div class="empty">Henüz öğe eklenmedi.</div>
             </div>
         </div>
 
         <div class="actions">
-            <button onclick="createList()" class="primary"><i class="fas fa-qrcode"></i> Liste Oluştur & QR Al</button>
-        </div>
-
-        <div id="qrModal" class="modal">
-            <div class="modal-content">
-                <span class="close" onclick="closeModal()">&times;</span>
-                <h2>Listeniz Hazır!</h2>
-                <div id="qrCode"></div>
-                <div id="listLink"></div>
-                <button onclick="copyLink()"><i class="fas fa-copy"></i> Linki Kopyala</button>
-                <p class="password-info">Düzenleme şifresi: <span id="editPassword"></span></p>
+            <button onclick="shareList()" class="primary"><i class="fas fa-share-alt"></i> Listeyi Paylaş</button>
+            <div id="qrcode"></div>
+            <div id="shareLinkContainer" style="margin-top: 10px; text-align: center; display: none;">
+                <p>Paylaşım Bağlantısı: <a id="shareLink" href="#" target="_blank"></a></p>
             </div>
         </div>
     </div>
-    <div class="footer">
-        <p class="isim">Developed by Bünyamin Ekmekcioğlu</p>
-    </div>
+
     <script>
-        // Firebase Config (Kendi bilgilerinizle değiştirin)
+        // Firebase Config (aynı olmalı)
         const firebaseConfig = {
             apiKey: "AIzaSyCGG5Ur3YpVxbtkjooMxE6r7RPuAmZoFRI",
             authDomain: "anonim-not.firebaseapp.com",
@@ -90,42 +91,17 @@
             messagingSenderId: "1020793266706",
             appId: "1:1020793266706:web:bdaba147c8367a50dfaecb"
         };
-
-        // Firebase'i başlat
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
-
-        let items = JSON.parse(localStorage.getItem('draftItems')) || [];
+        const qrcodeDiv = document.getElementById('qrcode');
+        const itemsListDiv = document.getElementById('itemsList');
+        let items = [];
         const IMGUR_CLIENT_ID = "895f27f2c7a23be"; // Imgur Client ID'niz
 
-        // Sayfa yüklendiğinde öğeleri render et
-        document.addEventListener('DOMContentLoaded', function() {
-            renderItems();
-            checkImgurStatus(); // Imgur bağlantısını test et
-        });
-
-        // Imgur bağlantısını test et
-        async function checkImgurStatus() {
-            try {
-                const response = await fetch("https://api.imgur.com/3/credits", {
-                    headers: { "Authorization": `Client-ID ${IMGUR_CLIENT_ID}` }
-                });
-                const data = await response.json();
-                console.log("Imgur API Durumu:", data);
-                if (!data.success) {
-                    console.warn("Imgur API Limitleri:", data.data);
-                }
-            } catch (error) {
-                console.error("Imgur Bağlantı Hatası:", error);
-            }
-        }
-
-        // Resmi Imgur'a yükle
         async function uploadImageToImgur(file) {
             showLoading();
             document.getElementById("imageError").textContent = "";
 
-            // Dosya boyutu kontrolü (10MB)
             if (file.size > 10 * 1024 * 1024) {
                 hideLoading();
                 document.getElementById("imageError").textContent = "Resim boyutu 10MB'tan küçük olmalı!";
@@ -150,10 +126,7 @@
                 }
                 return data.data.link;
             } catch (error) {
-                console.error("Imgur Hatası:", {
-                    error: error.message,
-                    stack: error.stack
-                });
+                console.error("Imgur Hatası:", { error: error.message, stack: error.stack });
                 document.getElementById("imageError").textContent = "Resim yüklenemedi: " + error.message;
                 throw error;
             } finally {
@@ -161,164 +134,87 @@
             }
         }
 
-        // Öğe ekle
         async function addItem() {
-            const name = document.getElementById("itemName").value.trim();
-            const amount = document.getElementById("itemAmount").value.trim();
-            const imageFile = document.getElementById("itemImage").files[0];
-
-            if (!name) {
-                alert("Lütfen öğe adı girin!");
-                return;
-            }
-
+            const nameInput = document.getElementById("itemName");
+            const amountInput = document.getElementById("itemAmount");
+            const imageInput = document.getElementById("itemImage");
+            const name = nameInput.value.trim();
+            const amount = amountInput.value || "1";
+            const imageFile = imageInput.files[0];
             let imageUrl = null;
-            if (imageFile) {
-                try {
-                    imageUrl = await uploadImageToImgur(imageFile);
-                } catch (error) {
-                    return; // Hata mesajı zaten gösterildi
-                }
-            }
 
-            items.push({
-                name: name,
-                amount: amount || "1",
-                imageUrl: imageUrl
-            });
+            if (!name) {htmlame, amount, imageUrl: imageUrl });
+            renderItems();
+            nameInput.value = "";
+            amountInput.value = "";
+            imageInput.value = "";
+        }
 
-            // Input'ları temizle
-            document.getElementById("itemName").value = "";
-            document.getElementById("itemAmount").value = "";
-            document.getElementById("itemImage").value = "";
-
-            // LocalStorage'a kaydet
-            localStorage.setItem('draftItems', JSON.stringify(items));
+        function removeItem(index) {
+            items.splice(index, 1);
             renderItems();
         }
 
-        // Öğeleri render et
         function renderItems() {
-            const listContainer = document.getElementById("itemsList");
-            listContainer.innerHTML = "";
-
+            itemsListDiv.innerHTML = '';
+            if (items.length === 0) {
+                itemsListDiv.innerHTML = '<div class="empty">Henüz öğe eklenmedi.</div>';
+                return;
+            }
             items.forEach((item, index) => {
-                const itemElement = document.createElement("div");
-                itemElement.className = "item";
-
+                const div = document.createElement('div');
+                div.className = 'item';
                 let imageHtml = '';
                 if (item.imageUrl) {
                     imageHtml = `<div class="item-image-container">
-                        <img src="${item.imageUrl}" class="item-image" onerror="this.onerror=null;this.style.display='none'">
+                        <img src="${item.imageUrl}" class="item-image" onerror="this.style.display='none'">
                     </div>`;
                 }
-
-                itemElement.innerHTML = `
+                div.innerHTML = `
                     ${imageHtml}
                     <div class="item-details">
                         <div class="item-name">${item.name}</div>
                         <div class="item-amount">${item.amount}</div>
                     </div>
-                    <button onclick="removeItem(${index})" class="remove-btn"><i class="fas fa-trash"></i></button>
+                    <button class="remove-btn" onclick="removeItem(${index})"><i class="fas fa-trash"></i></button>
                 `;
-                listContainer.appendChild(itemElement);
+                itemsListDiv.appendChild(div);
             });
         }
 
-        // Öğe sil
-        function removeItem(index) {
-            items.splice(index, 1);
-            localStorage.setItem('draftItems', JSON.stringify(items));
-            renderItems();
-        }
-
-        // Liste oluştur
-        async function createList() {
-            const title = document.getElementById("listTitle").value.trim();
-
-            if (!title) {
-                alert("Lütfen liste başlığı girin!");
-                return;
-            }
-
-            if (items.length === 0) {
-                alert("Lütfen en az bir öğe ekleyin!");
-                return;
-            }
-
-            showLoading();
+        async function saveListToFirestore(listData) {
             try {
-                const listId = Math.random().toString(36).substring(2, 11);
-                const editPassword = Math.random().toString(36).substring(2, 8);
-
-                await db.collection("lists").doc(listId).set({
-                    title: title,
-                    items: items,
-                    password: editPassword,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
-
-                // QR Kod Oluştur
-                generateQRCode(listId, editPassword);
-                
-                // Başarılı olduğunda draft'i temizle
-                items = [];
-                localStorage.removeItem('draftItems');
+                const docRef = await db.collection("lists").add(listData);
+                return docRef.id;
             } catch (error) {
-                console.error("Firestore Hatası:", error);
-                alert("Liste oluşturulurken hata oluştu: " + error.message);
-            } finally {
-                hideLoading();
+                console.error("Firestore'a yazma hatası:", error);
+                alert("Liste kaydedilirken bir hata oluştu.");
+                return null;
             }
         }
 
-        // QR Kod oluştur
-        function generateQRCode(listId, editPassword) {
-            const qrcodeDiv = document.getElementById("qrCode");
-            qrcodeDiv.innerHTML = "";
-            const listUrl = `${window.location.origin}/view.html?id=${listId}&p=${editPassword}`;
-
-            try {
-                new QRCode(qrcodeDiv, {
-                    text: listUrl,
-                    width: 200,
-                    height: 200,
-                    colorDark: "#2c3e50",
-                    correctLevel: QRCode.CorrectLevel.H
-                });
-            } catch (qrError) {
-                qrcodeDiv.innerHTML = `
-                    <div class="qr-fallback">
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(listUrl)}"
-                             alt="QR Code">
-                    </div>
-                `;
+        async function shareList() {
+            if (items.length === 0) {
+                alert("Lütfen paylaşmak için önce öğe ekleyin.");
+                return;
             }
 
-            document.getElementById("listLink").innerHTML = `
-                <p>Liste linki:</p>
-                <a href="${listUrl}" target="_blank">${urlShortener(listUrl)}</a>
-            `;
+            const listTitle = document.getElementById("listTitle").value.trim();
+            const listData = {
+                title: listTitle || "Anonim Liste",
+                items: items,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
 
-            document.getElementById("editPassword").textContent = editPassword;
-            document.getElementById("qrModal").style.display = "block";
-        }
+            const listId = await saveListToFirestore(listData);
 
-        // Yardımcı fonksiyonlar
-        function urlShortener(url) {
-            return url.length > 50 ? url.substring(0, 50) + "..." : url;
-        }
-
-        function closeModal() {
-            document.getElementById("qrModal").style.display = "none";
-            document.getElementById("listTitle").value = "";
-        }
-
-        function copyLink() {
-            const link = document.querySelector("#listLink a").href;
-            navigator.clipboard.writeText(link)
-                .then(() => alert("Link kopyalandı!"))
-                .catch(err => alert("Link kopyalanırken hata oluştu"));
+            if (listId) {
+                const shareLink = `${window.location.origin}/view.html?id=${listId}`;
+                new QRCode(qrcodeDiv, shareLink);
+                document.getElementById("shareLink").href = shareLink;
+                document.getElementById("shareLink").textContent = shareLink;
+                document.getElementById("shareLinkContainer").style.display = "block";
+            }
         }
 
         function showLoading() {
